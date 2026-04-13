@@ -1,0 +1,1371 @@
+================================================================================
+FOODKING — COMPLETE REBUILD BLUEPRINT
+Full Requirements & Architecture Document (Vibe Coding Ready)
+================================================================================
+Repository: pals-codes/foodking | Branch: main
+Sections: 12 | Modules: 30 | DB Tables: 45+ | API Endpoints: 200+
+================================================================================
+
+
+================================================================================
+SECTION 0: SOURCE MAPPING
+================================================================================
+
+0.1 REPOSITORY TOP-LEVEL STRUCTURE
+------------------------------------
+app source code/customer-app/     → Flutter-based customer-facing mobile app
+app source code/delivery-app/     → Flutter-based delivery boy mobile app
+web source code/                  → Backend, admin dashboard, customer website
+
+0.2 WEB SOURCE CODE — BACKEND PATHS
+--------------------------------------
+web source code/app/Enums/                              → 26 enum files (status codes, types, roles)
+web source code/app/Http/Controllers/Admin/             → 74 admin panel API controllers
+web source code/app/Http/Controllers/Auth/             → 7 auth controllers (login, OTP, reset, social)
+web source code/app/Http/Controllers/Frontend/         → 16 customer-facing API controllers
+web source code/app/Http/Controllers/Table/            → 3 dining table ordering controllers
+web source code/app/Http/Controllers/Installer/        → 1 one-time installation wizard controller
+web source code/app/Http/Requests/                     → Form validation rules for every endpoint
+web source code/app/Http/Resources/                    → API response shapes for every endpoint
+web source code/app/Http/Middleware/                   → Request interceptors (API key, JSON, locale)
+web source code/app/Models/                            → 40+ database entity definitions
+web source code/app/Services/                          → 87 files — business logic layer
+web source code/app/Events/                            → Event definitions for async notifications
+web source code/app/Listeners/                         → Event handlers (email, SMS, push senders)
+web source code/app/Exports/                           → Spreadsheet export logic
+web source code/app/Imports/                           → Spreadsheet import logic
+web source code/database/migrations/                   → All DB schema migration files
+web source code/database/seeders/                      → Default data seeders
+web source code/routes/api.php                         → All API route definitions
+
+
+================================================================================
+SECTION 1: EXECUTIVE SUMMARY
+================================================================================
+
+1.1 SYSTEM OVERVIEW
+--------------------
+FoodKing is a full-stack food ordering and delivery platform. It covers:
+- A RESTful JSON API backend (Laravel/PHP)
+- An admin dashboard (Vue.js 3 SPA)
+- A customer-facing website (Vue.js 3 SPA)
+- A customer mobile app (Flutter/Dart)
+- A delivery boy mobile app (Flutter/Dart)
+
+The system supports multi-branch restaurant operations with online ordering,
+dine-in table QR ordering, POS terminal ordering, kiosk ordering,
+delivery management, kitchen display, and comprehensive reporting.
+
+1.2 SYSTEM SCOPE
+-----------------
+- Multi-channel ordering: website, mobile app, POS, dining table QR, kiosk
+- Multi-branch support with semi-independent operations per branch
+- Complete order lifecycle (pending → confirmed → preparing → prepared → delivering → delivered)
+- 22+ payment gateways with regional support
+- Kitchen Display System (KDS) for kitchen staff
+- Order Status Screen (OSS) for in-store customers
+- Delivery boy assignment and GPS tracking
+- Dining table QR code ordering
+- Self-service kiosk terminals
+- Sales, item, and credit balance reports
+- Real-time notifications via Email, SMS, Push (Firebase)
+- E-Wallet / Credit System for customers
+
+1.3 SYSTEM ARCHITECTURE (3-TIER)
+----------------------------------
+PRESENTATION TIER:
+  - Admin Dashboard (Vue.js SPA)
+  - Customer Website (Vue.js SPA)
+  - Customer Mobile App (Flutter)
+  - Delivery Boy App (Flutter)
+
+APPLICATION TIER:
+  - RESTful JSON API
+  - Authentication Layer (Token-Based / Sanctum)
+  - Authorization Layer (Role & Permission / Spatie)
+  - Service Layer (Business Logic — 87 service files)
+  - Event System (Async Notifications)
+  - Payment Gateway Manager
+  - SMS Gateway Manager
+
+DATA TIER:
+  - Relational Database (MySQL/MariaDB)
+  - File Storage (Spatie Media Library)
+  - Cache Layer
+  - Job Queue (Laravel Queue)
+
+EXTERNAL SERVICES:
+  - 22 Payment Gateways
+  - 8 SMS Gateways
+  - Firebase Cloud Messaging (FCM)
+  - Google OAuth
+  - Google Maps API
+
+1.4 TECHNOLOGY STACK
+---------------------
+Backend Language      : PHP 8.x
+Backend Framework     : Laravel (MVC + Service Layer)
+Frontend Framework    : Vue.js 3 with Vuex (Admin + Customer Web SPA)
+Mobile Framework      : Flutter/Dart with GetX (Customer + Delivery Apps)
+Database              : MySQL / MariaDB
+Authentication        : Laravel Sanctum (token-based)
+Authorization         : Spatie Permission (RBAC with granular permissions)
+Media Management      : Spatie Media Library (uploads + image conversions)
+Settings Management   : dipokhalder/settings (DB-backed runtime settings)
+Queue System          : Laravel Queue (async job processing)
+Push Notifications    : Firebase Cloud Messaging (FCM)
+Internationalization  : Vue i18n (multi-language + RTL support)
+
+1.5 KEY BUSINESS CAPABILITIES
+-------------------------------
+1.  Multi-Channel Ordering — website, mobile app, POS, dining QR, kiosk
+2.  Multi-Branch Support — isolated items, orders, delivery zones, staff per branch
+3.  Complete Order Lifecycle — placement to delivery with real-time tracking
+4.  22 Payment Gateways — extensive payment support for global markets
+5.  Kitchen Display System (KDS) — real-time order queue for kitchen staff
+6.  Order Status Screen (OSS) — public-facing order progress display
+7.  Delivery Management — delivery boy assignment, GPS tracking, confirmation
+8.  Dining Table Management — QR code-based dine-in ordering with table assignment
+9.  Kiosk Machine Support — self-service ordering terminals
+10. Comprehensive Reporting — sales, item performance, credit balance reports
+11. Real-Time Notifications — email, SMS, push at every order status change
+12. E-Wallet / Credit System — customer credit balance for cashback and refunds
+
+
+================================================================================
+SECTION 2: GLOBAL OVERVIEW
+================================================================================
+
+2.1 ROLES AND PERMISSIONS
+--------------------------
+Role ID | Role Name       | Description
+--------|-----------------|----------------------------------------------------
+1       | Admin           | Full system access — all permissions auto-granted
+2       | Customer        | End-user via website or mobile app
+3       | Delivery Boy    | Handles order delivery with mobile app tracking
+4       | Waiter          | Manages dine-in table service
+5       | Chef            | Kitchen staff — KDS and Order Status Screen access
+6       | Branch Manager  | Manages a specific branch (orders, staff, reports)
+7       | POS Operator    | Operates POS terminal — POS and POS orders only
+8       | Stuff (Staff)   | General staff with configurable permissions
+
+PERMISSION SYSTEM ARCHITECTURE:
+- Hierarchical parent-child structure
+- Parent = module (e.g., "items")
+- Child = action within module (e.g., "items_create", "items_edit", "items_delete", "items_show")
+- Guard: sanctum (token-based)
+- Total: 65 permissions across all modules
+
+COMPLETE PERMISSION CATALOG:
+Parent Permission         | Child Permissions                        | Description
+--------------------------|------------------------------------------|-----------------------------
+dashboard                 | (access-only)                            | View admin dashboard
+items                     | items_create/edit/delete/show            | Manage food items
+dining-tables             | dining-tables_create/edit/delete/show    | Manage dine-in tables
+pos                       | (access-only)                            | Access POS terminal
+pos-orders                | (access-only)                            | View POS orders
+online-orders             | (access-only)                            | View online orders
+table-orders              | (access-only)                            | View table orders
+kitchen-display-system    | (access-only)                            | Access KDS
+order-status-screen       | (access-only)                            | Access OSS
+coupons                   | coupons_create/edit/delete/show          | Manage coupons
+offers                    | offers_create/edit/delete/show           | Manage offers
+push-notifications        | push-notifications_create/edit/delete/show| Manage push notifications
+messages                  | (access-only)                            | Customer messaging
+subscribers               | (access-only)                            | View newsletter subscribers
+administrators            | administrators_create/edit/delete/show   | Manage admin users
+delivery-boys             | delivery-boys_create/edit/delete/show    | Manage delivery personnel
+customers                 | customers_create/edit/delete/show        | Manage customers
+employees                 | employees_create/edit/delete/show        | Manage general staff
+waiters                   | waiters_create/edit/delete/show          | Manage waiters
+chefs                     | chefs_create/edit/delete/show            | Manage chefs
+transactions              | (access-only)                            | View transactions
+sales-report              | (access-only)                            | View sales reports
+items-report              | (access-only)                            | View item performance
+credit-balance-report     | (access-only)                            | View credit balance reports
+settings                  | (access-only)                            | Access all system settings
+
+DEFAULT ROLE-PERMISSION ASSIGNMENTS:
+- Admin (1): All 65 permissions
+- Branch Manager (6): dashboard, dining-tables (full CRUD), pos, pos-orders, online-orders,
+  table-orders, KDS, OSS, push-notifications (full CRUD), messages, delivery-boys (full CRUD),
+  customers (full CRUD), employees (full CRUD), waiters (full CRUD), chefs (full CRUD),
+  transactions, sales-report
+- POS Operator (7): dashboard, pos, pos-orders
+- Chef (5): dashboard, kitchen-display-system, order-status-screen
+- Customer (2): No admin permissions — frontend API only
+- Delivery Boy (3): No admin permissions — delivery API only
+- Waiter (4): No admin permissions by default — configurable
+- Stuff (8): No admin permissions by default — fully configurable
+
+2.2 AUTHENTICATION FLOWS
+--------------------------
+System uses token-based authentication (Laravel Sanctum).
+Token included in all requests via Authorization: Bearer <token>
+Token has no built-in expiration but can be revoked via logout.
+
+2.2.1 Standard Login:
+  1. Client sends email/phone + password
+  2. Server validates credentials
+  3. Returns personal access token + user profile
+
+2.2.2 OTP-Based Signup (3-step):
+  Step 1 — Request OTP: send email/phone → server generates OTP (4/6/8 digits),
+            stores with expiry (5/10/15/20/30/60 min), delivers via SMS/email/both
+  Step 2 — Verify OTP: send OTP code → server validates, returns success
+  Step 3 — Complete Registration: send full details → server creates Customer user + token
+
+2.2.3 Guest Signup:
+  - Simplified path, no OTP required
+  - Creates Customer account (name, email, phone, password)
+  - Used when guest checkout converts to account
+
+2.2.4 Social Login (Google):
+  1. Client gets Google access token
+  2. Sends to social login endpoint
+  3. Server validates with Google, retrieves email/profile
+  4. If user exists: returns token; if not: creates Customer + token
+  5. Config (client ID, secret) stored in gateway_options table
+
+2.2.5 Kiosk Machine Login:
+  - Specialized login for self-service kiosk terminals
+  - Authenticates with assigned credentials, receives branch-scoped token
+
+2.2.6 Forgot Password (3-step):
+  Step 1: Send email/phone → OTP generated and sent
+  Step 2: Verify OTP
+  Step 3: Send new password → server updates password
+
+2.2.7 Token Refresh:
+  - Endpoint revokes current token and issues a new one
+
+2.3 GLOBAL SETTINGS SYSTEM
+----------------------------
+All settings stored in DB as key-value pairs organized by group.
+Loaded at runtime, modifiable via admin panel without code changes.
+
+COMPANY SETTINGS (group: company):
+  company_name, company_email, company_phone, company_website,
+  company_city, company_state, company_country_code, company_zip_code, company_address
+
+SITE SETTINGS (group: site):
+  site_date_format            → "d-m-Y"
+  site_time_format            → "h:i A"
+  site_default_timezone       → "Asia/Dhaka"
+  site_default_branch         → 1
+  site_default_currency       → 1
+  site_default_currency_symbol → "$"
+  site_currency_position      → 5 (LEFT) or 10 (RIGHT)
+  site_digit_after_decimal_point → "2"
+  site_email_verification     → 5 (ENABLE)
+  site_phone_verification     → 10 (DISABLE)
+  site_default_language       → 1
+  site_google_map_key         → (configured per install)
+  site_android_app_link       → (configured per install)
+  site_ios_app_link           → (configured per install)
+  site_copyright              → (configured per install)
+  site_language_switch        → 5 (ENABLE)
+  site_app_debug              → 10 (DISABLE)
+  site_auto_update            → 10 (DISABLE)
+  site_online_payment_gateway → 10 (DISABLE)
+  site_default_sms_gateway    → 0 (none)
+  site_guest_login            → 5 (ENABLE)
+  site_default_phone_digit_length → 10
+
+ORDER SETUP SETTINGS (group: order_setup):
+  order_setup_food_preparation_time            → "30" (minutes)
+  order_setup_schedule_order_slot_duration     → "30" (minutes)
+  order_setup_takeaway                         → 5 (ENABLE)
+  order_setup_delivery                         → 5 (ENABLE)
+  order_setup_free_delivery_kilometer          → "2"
+  order_setup_basic_delivery_charge            → "1"
+  order_setup_charge_per_kilo                  → "1"
+
+MAIL SETTINGS (group: mail):
+  mail_mailer, mail_host, mail_port, mail_username, mail_password,
+  mail_encryption, mail_from_name, mail_from_email
+
+OTP SETTINGS (group: otp):
+  otp_type          → 5 (BOTH), 10 (SMS), 15 (EMAIL)
+  otp_digit_limit   → 4 (FOUR), 6 (SIX), 8 (EIGHT)
+  otp_expire_time   → 5/10/15/20/30/60 minutes
+
+NOTIFICATION SETTINGS (group: notification):
+  notification_fcm_public_vapid_key, notification_fcm_api_key,
+  notification_fcm_auth_domain, notification_fcm_project_id,
+  notification_fcm_storage_bucket, notification_fcm_messaging_sender_id,
+  notification_fcm_app_id, notification_fcm_measurement_id,
+  notification_fcm_json_file (stored as media)
+
+THEME SETTINGS (group: theme):
+  theme_logo, theme_favicon_logo, theme_footer_logo
+
+SOCIAL MEDIA SETTINGS (group: social_media):
+  Social media URLs (Facebook, Twitter, Instagram, YouTube, etc.)
+
+COOKIES SETTINGS (group: cookies):
+  Cookie consent text and enable/disable toggle
+
+2.4 ENUM REFERENCE (Status Codes)
+-----------------------------------
+ENABLE/DISABLE: ENABLE=5, DISABLE=10
+CURRENCY POSITION: LEFT=5, RIGHT=10
+OTP TYPE: BOTH=5, SMS=10, EMAIL=15
+OTP DIGITS: FOUR=4, SIX=6, EIGHT=8
+OTP EXPIRE: 5, 10, 15, 20, 30, 60 (minutes)
+
+ORDER STATUS:
+  PENDING=5, CONFIRMED=10, PREPARING=15, PREPARED=20,
+  OUT_FOR_DELIVERY=25, DELIVERED=30, CANCELED=35, REJECTED=40, RETURNED=45
+
+ORDER TYPE:
+  DELIVERY=5, TAKEAWAY=10, POS=15, TABLE=20
+
+PAYMENT STATUS: UNPAID=5, PAID=10
+
+DELIVERY TYPE: SCHEDULED=5, NOW=10
+
+2.5 MULTI-LANGUAGE SUPPORT
+----------------------------
+- Default seeded languages: English, Arabic, Bengali, German
+- RTL support for Arabic and other RTL languages
+- Language switching controlled by site_language_switch setting
+- Vue i18n for dynamic language file loading
+- Language configurable via admin panel
+
+2.6 MULTI-BRANCH ARCHITECTURE
+-------------------------------
+- Multiple restaurant branches, semi-independent operations
+- Global BranchScope query scope applied to branch-dependent models
+- Branch context determined by authenticated user's assigned branch or site default
+- Branch data: name, email, phone, address, city, state, zip, country code,
+  latitude, longitude, coverage/delivery zone, status (active/inactive), image
+
+2.7 NOTIFICATION SYSTEM
+-------------------------
+Event-driven notification architecture.
+Three delivery channels per event: Email, SMS, Push Notification.
+Each channel independently toggleable per event.
+
+NOTIFICATION ALERT TEMPLATES (stored in notification_alerts table):
+Alert Name                          | Triggered When
+------------------------------------|--------------------------------------
+Order Pending Message               | New order created
+Order Confirmation Message          | Order accepted by restaurant
+Order Preparing Message             | Kitchen starts preparation
+Order Prepared Message              | Kitchen finishes preparation
+Order Out For Delivery Message      | Delivery boy picks up order
+Order Delivered Message             | Delivery completed
+Order Canceled Message              | Order canceled
+Order Rejected Message              | Restaurant rejects order
+Order Returned Message              | Order returned
+Delivery Boy After Assign Message   | Delivery boy assigned to order
+Admin & Branch Manager New Order    | New online/table order received
+
+Each alert has:
+  - mail_message (customizable)
+  - sms_message (customizable)
+  - push_notification_message (customizable)
+  - mail ON/OFF
+  - sms ON/OFF
+  - push_notification ON/OFF
+
+EVENT-LISTENER MAPPING:
+SendOrderMail             → Email to customer
+SendOrderSms              → SMS to customer
+SendOrderPush             → Push to customer device
+SendOrderGotMail          → Email to admin/branch manager
+SendOrderGotSms           → SMS to admin/branch manager
+SendOrderGotPush          → Push to admin devices
+SendOrderDeliveryBoyMail  → Email to delivery boy
+SendOrderDeliveryBoySms   → SMS to delivery boy
+SendOrderDeliveryBoyPush  → Push to delivery boy device
+SendEmailVerification     → Verification email to new user
+
+
+================================================================================
+SECTION 3: SECURITY
+================================================================================
+
+- Token-based authentication via Laravel Sanctum
+- Role-Based Access Control via Spatie Permission
+- All admin routes protected by authentication + permission middleware
+- API key middleware for additional endpoint security (where applicable)
+- JSON enforcement middleware (all API responses are JSON)
+- Email verification middleware (enforced when site_email_verification = ENABLE)
+- Soft deletes on user records (data not permanently destroyed)
+- Passwords hashed (Laravel bcrypt standard)
+- Google OAuth token validated server-side before user creation
+
+
+================================================================================
+SECTION 4: PERFORMANCE & SCALABILITY
+================================================================================
+
+- Laravel Queue for async job processing (notifications sent off-request)
+- Cache layer for frequently accessed settings
+- Spatie Media Library image conversions at upload time (not on-demand)
+- BranchScope global query scope for efficient branch data isolation
+- Paginated list endpoints throughout (no unbounded data fetches)
+- Database indexes on foreign keys and frequently queried columns
+- Export-to-spreadsheet for bulk data operations
+
+
+================================================================================
+SECTION 5: STATE MACHINES
+================================================================================
+
+5.1 ORDER STATE MACHINE
+------------------------
+Pending (5)
+  → Confirmed (10)   [restaurant accepts]
+  → Rejected (40)    [restaurant rejects]
+  → Canceled (35)    [customer cancels]
+
+Confirmed (10)
+  → Preparing (15)   [kitchen starts]
+  → Canceled (35)
+
+Preparing (15)
+  → Prepared (20)    [kitchen finishes]
+
+Prepared (20)
+  → Out for Delivery (25) [delivery boy picks up — for DELIVERY type]
+  → Delivered (30)        [for TAKEAWAY or POS or TABLE type]
+
+Out for Delivery (25)
+  → Delivered (30)        [delivery boy marks delivered]
+
+Delivered (30)
+  → Returned (45)         [return initiated]
+
+Any state → Canceled (35) by admin/branch manager at appropriate stages
+
+5.2 PAYMENT STATE MACHINE
+--------------------------
+UNPAID (5) → PAID (10) [payment confirmed]
+
+5.3 ORDER TYPE FLOW DIFFERENCES
+---------------------------------
+DELIVERY (5):    Customer address required, delivery boy assigned, full lifecycle
+TAKEAWAY (10):   Customer picks up, no delivery boy, skips out-for-delivery state
+POS (15):        Placed at POS terminal by operator, immediate payment
+TABLE (20):      QR code scan, dine-in, no delivery, assigned to dining table
+
+
+================================================================================
+SECTION 6: REBUILD ORDER (RECOMMENDED BUILD SEQUENCE)
+================================================================================
+
+Phase 1 — Foundation:
+  1. Database schema & migrations
+  2. Enum definitions
+  3. Authentication (login, OTP, signup, social login)
+  4. Settings system
+
+Phase 2 — Core Models:
+  5. Users (all roles)
+  6. Branches
+  7. Items & Item Categories
+  8. Taxes
+  9. Addons
+
+Phase 3 — Ordering:
+  10. Orders (online delivery/takeaway)
+  11. POS Orders
+  12. Table Orders (QR code dining)
+  13. Kiosk Orders
+
+Phase 4 — Payments & Financials:
+  14. Payment Gateways (22 integrations)
+  15. Transactions
+  16. Coupons & Offers
+  17. E-Wallet / Credit System
+
+Phase 5 — Operations:
+  18. Delivery Boy Management
+  19. Dining Tables
+  20. Kiosk Machines
+  21. Time Slots
+  22. Kitchen Display System
+  23. Order Status Screen
+
+Phase 6 — Communication:
+  24. SMS Gateways (8 integrations)
+  25. Push Notifications (Firebase)
+  26. Messages (customer chat)
+  27. Notification Alert Templates
+
+Phase 7 — Content & Configuration:
+  28. Sliders
+  29. Pages (static content)
+  30. Subscribers (newsletter)
+  31. Currencies
+  32. Languages
+  33. Social Login
+  34. Menus & Navigation
+
+Phase 8 — Reporting & Analytics:
+  35. Dashboard (summary stats)
+  36. Sales Report
+  37. Items Report
+  38. Credit Balance Report
+  39. Analytics
+
+
+================================================================================
+SECTION 7: MODULE SPECIFICATIONS (30 MODULES)
+================================================================================
+
+------------------------------------------------------------
+MODULE 7.1 — USERS
+------------------------------------------------------------
+DB TABLE: users
+FIELDS:
+  id, name, email, phone, email_verified_at (nullable),
+  password, branch_id (nullable, FK → branches),
+  credit_balance (decimal, default 0.00),
+  creator_type, creator_id (polymorphic — who created this user),
+  editor_type, editor_id (polymorphic — who last edited this user),
+  remember_token (nullable),
+  deleted_at (nullable — soft delete),
+  created_at, updated_at
+
+RELATIONSHIPS:
+  - Has many Addresses
+  - Has many Orders (as customer via user_id)
+  - Has many Orders (as delivery boy via delivery_boy_id)
+  - Has many Messages
+  - Belongs to Branch (optional)
+  - Has many Roles (Spatie permission system)
+  - Has media (profile image — Spatie Media Library)
+
+USER ROLES: Admin(1), Customer(2), Delivery Boy(3), Waiter(4),
+            Chef(5), Branch Manager(6), POS Operator(7), Stuff(8)
+
+ADMIN ENDPOINTS (all follow same 8-endpoint pattern):
+  GET    /api/admin/administrator           → List all administrators (paginated)
+  POST   /api/admin/administrator           → Create administrator
+  GET    /api/admin/administrator/{id}      → View administrator
+  PUT    /api/admin/administrator/{id}      → Update administrator
+  DELETE /api/admin/administrator/{id}      → Soft-delete administrator
+  GET    /api/admin/administrator/export    → Export to spreadsheet
+  POST   /api/admin/administrator/{id}/change-password
+  POST   /api/admin/administrator/{id}/change-image
+
+Same 8-endpoint pattern for:
+  /api/admin/customer
+  /api/admin/delivery-boy
+  /api/admin/employee
+  /api/admin/waiter
+  /api/admin/chef
+
+FRONTEND PROFILE ENDPOINTS:
+  GET  /api/profile                   → Get current user's profile
+  PUT  /api/profile                   → Update current user's profile
+  POST /api/profile/change-password   → Change own password
+  POST /api/profile/change-image      → Update profile image
+
+USER CREATE/EDIT FIELDS:
+  name (required), email (required, unique), phone (required),
+  password (required on create), branch_id (for non-customer roles),
+  role assignment
+
+------------------------------------------------------------
+MODULE 7.2 — BRANCHES
+------------------------------------------------------------
+DB TABLE: branches
+FIELDS:
+  id, name, email, phone, address, city, state, zip_code, country_code,
+  latitude, longitude, coverage (delivery zone definition — polygon or radius),
+  status (ENABLE=5 / DISABLE=10),
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+
+RELATIONSHIPS:
+  - Has many Users (staff assigned to this branch)
+  - Has many Orders
+  - Has many Items
+  - Has many TimeSlots
+  - Has media (branch image)
+
+ADMIN ENDPOINTS:
+  GET    /api/admin/branch           → List branches
+  POST   /api/admin/branch           → Create branch
+  GET    /api/admin/branch/{id}      → View branch
+  PUT    /api/admin/branch/{id}      → Update branch
+  DELETE /api/admin/branch/{id}      → Soft-delete branch
+  POST   /api/admin/branch/{id}/change-image
+
+------------------------------------------------------------
+MODULE 7.3 — ITEMS (FOOD MENU)
+------------------------------------------------------------
+DB TABLES: item_categories, items, item_variations (optional)
+
+ITEM CATEGORIES TABLE:
+  id, name, description, status (ENABLE/DISABLE),
+  branch_id (FK), sort_position,
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+  + media (category image)
+
+ITEMS TABLE:
+  id, item_category_id (FK), name, description, price (decimal),
+  discount_price (decimal, nullable), tax_id (FK → taxes, nullable),
+  is_available (ENABLE/DISABLE), is_featured (ENABLE/DISABLE),
+  branch_id (FK), sort_position,
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+  + media (item image)
+
+ITEM VARIATIONS (addons/extras linked to an item):
+  Varies — name, additional_price, is_required, max_select
+
+RELATIONSHIPS:
+  - Item belongs to ItemCategory
+  - Item belongs to Branch
+  - Item belongs to Tax (optional)
+  - Item has many Addons
+  - Item has media
+
+ADMIN ENDPOINTS (categories):
+  GET/POST   /api/admin/item-category
+  GET/PUT/DELETE /api/admin/item-category/{id}
+  POST       /api/admin/item-category/{id}/change-image
+
+ADMIN ENDPOINTS (items):
+  GET/POST   /api/admin/item
+  GET/PUT/DELETE /api/admin/item/{id}
+  POST       /api/admin/item/{id}/change-image
+  GET        /api/admin/item/export
+  POST       /api/admin/item/import
+
+FRONTEND ENDPOINTS:
+  GET /api/frontend/item-category     → Categories for customer menu
+  GET /api/frontend/item              → Items list (filterable by category/branch)
+  GET /api/frontend/item/{id}         → Single item detail
+
+------------------------------------------------------------
+MODULE 7.4 — TAXES
+------------------------------------------------------------
+DB TABLE: taxes
+FIELDS:
+  id, name, tax_rate (decimal percentage),
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/tax
+  GET/PUT/DELETE /api/admin/tax/{id}
+
+------------------------------------------------------------
+MODULE 7.5 — ORDERS (CORE MODULE)
+------------------------------------------------------------
+DB TABLE: orders
+FIELDS:
+  id, serial_no (format: DDMMYY + order_id),
+  user_id (FK → users, customer),
+  branch_id (FK → branches),
+  delivery_boy_id (FK → users, nullable),
+  dining_table_id (FK → dining_tables, nullable),
+  kiosk_machine_id (FK → kiosk_machines, nullable),
+  order_type (DELIVERY=5, TAKEAWAY=10, POS=15, TABLE=20),
+  order_status (PENDING=5 through RETURNED=45),
+  payment_status (UNPAID=5, PAID=10),
+  payment_method (FK → payment_gateways),
+  delivery_type (SCHEDULED=5, NOW=10),
+  scheduled_date (date, nullable),
+  scheduled_time (time, nullable),
+  address_id (FK → addresses, nullable — for delivery orders),
+  coupon_id (FK → coupons, nullable),
+  coupon_discount (decimal, default 0),
+  offer_discount (decimal, default 0),
+  subtotal (decimal),
+  tax_amount (decimal),
+  delivery_charge (decimal),
+  total (decimal),
+  credit_used (decimal, default 0),
+  note (text, nullable — customer order notes),
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+
+ORDER ITEMS TABLE (order_items):
+  id, order_id (FK), item_id (FK), item_name (snapshot), item_price (snapshot),
+  quantity, tax_rate (snapshot), addons (JSON snapshot),
+  subtotal, created_at, updated_at
+
+DELIVERY CHARGE CALCULATION:
+  distance = Haversine formula between branch lat/lng and customer address lat/lng
+  if distance ≤ order_setup_free_delivery_kilometer → delivery_charge = 0
+  else → delivery_charge = basic_charge + (charge_per_kilo × (distance − free_km))
+  Example: free=2km, basic=$1, per_km=$1, distance=5km → charge = $1 + ($1×3) = $4
+
+ORDER SERIAL NUMBER FORMAT:
+  DDMMYY + ORDER_ID
+  Example: Order ID 42 on March 25, 2025 → serial = "25032542"
+
+ADMIN ENDPOINTS:
+  GET    /api/admin/online-order            → List online orders (delivery/takeaway)
+  GET    /api/admin/online-order/{id}       → View order detail
+  PUT    /api/admin/online-order/{id}/change-status → Update order status
+  POST   /api/admin/online-order/{id}/assign-delivery-boy
+  GET    /api/admin/pos-order              → List POS orders
+  GET    /api/admin/table-order            → List table orders
+
+FRONTEND ENDPOINTS:
+  GET  /api/frontend/order            → Customer's order history
+  POST /api/frontend/order            → Place a new order
+  GET  /api/frontend/order/{id}       → Order detail
+  POST /api/frontend/order/{id}/cancel → Cancel order
+
+DELIVERY BOY ENDPOINTS:
+  GET /api/frontend/delivery-boy-order                          → Assigned orders
+  PUT /api/frontend/delivery-boy-order/{id}/change-status       → Mark delivered
+
+------------------------------------------------------------
+MODULE 7.6 — COUPONS
+------------------------------------------------------------
+DB TABLE: coupons
+FIELDS:
+  id, code (unique), discount_type (FIXED/PERCENTAGE),
+  discount_amount, minimum_order_amount, maximum_discount_amount (for percentage),
+  start_date, end_date, usage_limit, used_count,
+  status (ENABLE/DISABLE),
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/coupon
+  GET/PUT/DELETE /api/admin/coupon/{id}
+
+FRONTEND ENDPOINTS:
+  GET  /api/frontend/coupon          → Available coupons list
+  POST /api/frontend/coupon/check    → Validate coupon code (returns discount amount)
+
+------------------------------------------------------------
+MODULE 7.7 — OFFERS
+------------------------------------------------------------
+DB TABLE: offers
+FIELDS:
+  id, name, description, discount_type (FIXED/PERCENTAGE),
+  discount_amount, applicable_to (items/categories/all),
+  item_ids (JSON array, nullable), category_ids (JSON array, nullable),
+  start_date, end_date, status (ENABLE/DISABLE),
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+  + media (offer banner image)
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/offer
+  GET/PUT/DELETE /api/admin/offer/{id}
+  POST           /api/admin/offer/{id}/change-image
+
+FRONTEND ENDPOINTS:
+  GET /api/frontend/offer   → Active offers list
+
+------------------------------------------------------------
+MODULE 7.8 — DINING TABLES
+------------------------------------------------------------
+DB TABLE: dining_tables
+FIELDS:
+  id, name, slug (unique — used in QR code URL),
+  branch_id (FK), capacity, status (ENABLE/DISABLE),
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+
+QR CODE ORDERING FLOW:
+  1. Customer scans QR code → opens URL with table slug
+  2. GET /api/table/dining-table/{slug} → retrieve table info
+  3. GET /api/table/item-category → browse menu
+  4. POST /api/table/dining-order → place order (no auth required)
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/dining-table
+  GET/PUT/DELETE /api/admin/dining-table/{id}
+
+TABLE API ENDPOINTS (no auth required):
+  GET  /api/table/item-category
+  GET  /api/table/dining-table/{slug}
+  POST /api/table/dining-order
+
+------------------------------------------------------------
+MODULE 7.9 — KIOSK MACHINES
+------------------------------------------------------------
+DB TABLE: kiosk_machines
+FIELDS:
+  id, name, branch_id (FK), status (ENABLE/DISABLE),
+  email, password (hashed — kiosk login credentials),
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+
+AUTH: Kiosk authenticates with email/password → receives branch-scoped token
+ORDERS placed via kiosk are of type POS (15) with kiosk_machine_id set
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/kiosk-machine
+  GET/PUT/DELETE /api/admin/kiosk-machine/{id}
+
+------------------------------------------------------------
+MODULE 7.10 — PAYMENT GATEWAYS
+------------------------------------------------------------
+DB TABLE: payment_gateways
+FIELDS:
+  id, name, slug (unique identifier), logo (media),
+  payment_mode (ONLINE/OFFLINE),
+  status (ENABLE/DISABLE), is_default,
+  gateway_options (JSON — stores API keys, secrets, config per gateway),
+  created_at, updated_at
+
+SEEDED GATEWAYS (23 total including):
+  Cash on Delivery, E-Wallet (credit), Stripe, PayPal, Razorpay,
+  PayStack, Mollie, Flutterwave, Instamojo, SSLCommerz, BKash,
+  Nagad, Mercado Pago, PayMob, Paytm, Cashfree, Xendit,
+  Myfatoorah, Benefit, PayFast, CinetPay, PayHere, Authorize.net
+
+ADMIN ENDPOINTS:
+  GET /api/admin/payment-gateway           → List all gateways
+  PUT /api/admin/payment-gateway/{id}      → Update gateway config/status
+  POST /api/admin/payment-gateway/{id}/change-image
+
+FRONTEND ENDPOINTS:
+  GET /api/frontend/payment-gateway        → List active gateways for checkout
+
+------------------------------------------------------------
+MODULE 7.11 — TRANSACTIONS
+------------------------------------------------------------
+DB TABLE: transactions
+FIELDS:
+  id, order_id (FK), user_id (FK, customer),
+  payment_gateway_id (FK), amount, transaction_id (external reference),
+  payment_status (UNPAID/PAID),
+  creator_type, creator_id,
+  created_at, updated_at
+
+ADMIN ENDPOINTS:
+  GET /api/admin/transaction           → List all transactions (paginated)
+  GET /api/admin/transaction/{id}      → View transaction detail
+  GET /api/admin/transaction/export    → Export to spreadsheet
+
+------------------------------------------------------------
+MODULE 7.12 — SMS GATEWAYS
+------------------------------------------------------------
+DB TABLE: sms_gateways (same pattern as payment_gateways)
+FIELDS: id, name, slug, status, is_default, gateway_options (JSON), created_at, updated_at
+
+SEEDED SMS GATEWAYS (8):
+  Twilio, Nexmo, MSG91, Telesign, Bulksms, Bulksmsbd, Clickatell, 2Factor
+
+ADMIN ENDPOINTS:
+  GET /api/admin/sms-gateway
+  PUT /api/admin/sms-gateway/{id}
+
+------------------------------------------------------------
+MODULE 7.13 — PUSH NOTIFICATIONS
+------------------------------------------------------------
+DB TABLE: push_notifications
+FIELDS:
+  id, title, message, target_audience (ALL/CUSTOMERS/DELIVERY_BOYS),
+  status (SENT/DRAFT), sent_at,
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+
+FCM DEVICE TOKENS TABLE (device_tokens):
+  id, user_id (FK), token (FCM device token), platform (android/ios/web),
+  created_at, updated_at
+
+FRONTEND ENDPOINT:
+  POST /api/frontend/device-token    → Register device token for push notifications
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/push-notification
+  GET/PUT/DELETE /api/admin/push-notification/{id}
+  POST           /api/admin/push-notification/{id}/send
+
+------------------------------------------------------------
+MODULE 7.14 — MESSAGES (CUSTOMER CHAT)
+------------------------------------------------------------
+DB TABLE: messages
+FIELDS:
+  id, user_id (FK — customer), admin_id (FK → users, nullable — admin responder),
+  message (text), sender_type (CUSTOMER/ADMIN),
+  is_read (boolean), created_at, updated_at
+
+FRONTEND ENDPOINT:
+  GET /api/frontend/message     → Customer's messages/chat
+
+ADMIN ENDPOINTS:
+  GET /api/admin/message        → List all customer messages (grouped by customer)
+  POST /api/admin/message/reply → Reply to a customer
+
+------------------------------------------------------------
+MODULE 7.15 — ADDRESSES
+------------------------------------------------------------
+DB TABLE: addresses
+FIELDS:
+  id, user_id (FK), label (Home/Work/Other), address (full text),
+  city, state, zip_code, country_code,
+  latitude, longitude, is_default (boolean),
+  creator_type, creator_id,
+  deleted_at, created_at, updated_at
+
+FRONTEND ENDPOINTS:
+  GET/POST       /api/frontend/address
+  GET/PUT/DELETE /api/frontend/address/{id}
+  POST           /api/frontend/address/{id}/set-default
+
+------------------------------------------------------------
+MODULE 7.16 — SLIDERS (BANNERS)
+------------------------------------------------------------
+DB TABLE: sliders
+FIELDS:
+  id, title, description, link_url, sort_position,
+  status (ENABLE/DISABLE),
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+  + media (slider image)
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/slider
+  GET/PUT/DELETE /api/admin/slider/{id}
+  POST           /api/admin/slider/{id}/change-image
+
+FRONTEND ENDPOINT:
+  GET /api/frontend/slider      → Active sliders for homepage
+
+------------------------------------------------------------
+MODULE 7.17 — PAGES (STATIC CONTENT)
+------------------------------------------------------------
+DB TABLE: pages
+FIELDS:
+  id, title, slug (unique), content (HTML/rich text),
+  status (ENABLE/DISABLE),
+  creator_type, creator_id, editor_type, editor_id,
+  deleted_at, created_at, updated_at
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/page
+  GET/PUT/DELETE /api/admin/page/{id}
+
+FRONTEND ENDPOINT:
+  GET /api/frontend/page/{slug}   → Public page by slug
+
+------------------------------------------------------------
+MODULE 7.18 — SUBSCRIBERS (NEWSLETTER)
+------------------------------------------------------------
+DB TABLE: subscribers
+FIELDS:
+  id, email, created_at, updated_at
+
+FRONTEND ENDPOINT:
+  POST /api/frontend/subscriber    → Subscribe with email
+
+ADMIN ENDPOINTS:
+  GET /api/admin/subscriber        → List all subscribers
+  GET /api/admin/subscriber/export → Export to spreadsheet
+  DELETE /api/admin/subscriber/{id}
+
+------------------------------------------------------------
+MODULE 7.19 — TIME SLOTS
+------------------------------------------------------------
+DB TABLE: time_slots
+FIELDS:
+  id, branch_id (FK), day_of_week (0=Sunday through 6=Saturday),
+  opening_time, closing_time, is_closed (boolean),
+  created_at, updated_at
+
+USAGE: Controls available scheduled order time slots per branch per day.
+Slot duration determined by order_setup_schedule_order_slot_duration setting.
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/time-slot
+  GET/PUT/DELETE /api/admin/time-slot/{id}
+
+FRONTEND ENDPOINT:
+  GET /api/frontend/time-slot     → Available time slots for scheduled ordering
+
+------------------------------------------------------------
+MODULE 7.20 — CURRENCIES
+------------------------------------------------------------
+DB TABLE: currencies
+FIELDS:
+  id, name, code (ISO 3-letter), symbol, exchange_rate (relative to base),
+  status (ENABLE/DISABLE), is_default,
+  created_at, updated_at
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/currency
+  GET/PUT/DELETE /api/admin/currency/{id}
+
+------------------------------------------------------------
+MODULE 7.21 — LANGUAGES
+------------------------------------------------------------
+DB TABLE: languages
+FIELDS:
+  id, name, code (e.g., "en", "ar"), direction (LTR/RTL),
+  status (ENABLE/DISABLE), is_default,
+  created_at, updated_at
+
+SEEDED: English (en, LTR), Arabic (ar, RTL), Bengali (bn, LTR), German (de, LTR)
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/language
+  GET/PUT/DELETE /api/admin/language/{id}
+
+------------------------------------------------------------
+MODULE 7.22 — ANALYTICS
+------------------------------------------------------------
+Tracks page views and customer behavior for admin reporting.
+Data stored in analytics table or via event tracking.
+
+ADMIN ENDPOINTS:
+  GET /api/admin/analytics         → Aggregate analytics data
+
+------------------------------------------------------------
+MODULE 7.23 — DASHBOARD & REPORTS
+------------------------------------------------------------
+DASHBOARD STATS (admin):
+  - Total orders (today, week, month, all-time)
+  - Revenue (today, week, month, all-time)
+  - Total customers
+  - Total items
+  - Recent orders list
+  - Order status breakdown chart
+  - Sales trend chart
+
+SALES REPORT:
+  - Filter by date range, branch
+  - Breakdown by order type
+  - Revenue, tax, discounts, delivery charges
+  - Export to spreadsheet
+
+ITEMS REPORT:
+  - Most ordered items
+  - Revenue per item
+  - Filter by date range, branch, category
+
+CREDIT BALANCE REPORT:
+  - Customer credit balance history
+  - Credits issued, credits used
+
+ADMIN ENDPOINTS:
+  GET /api/admin/dashboard
+  GET /api/admin/sales-report
+  GET /api/admin/items-report
+  GET /api/admin/credit-balance-report
+
+------------------------------------------------------------
+MODULE 7.24 — ROLES & PERMISSIONS
+------------------------------------------------------------
+ADMIN ENDPOINTS:
+  GET /api/admin/role              → List all roles
+  GET /api/admin/permission        → List all permissions
+  GET /api/admin/role/{id}/permissions
+  PUT /api/admin/role/{id}/permissions  → Update role permissions
+
+------------------------------------------------------------
+MODULE 7.25 — SETTINGS
+------------------------------------------------------------
+ADMIN ENDPOINTS:
+  GET /api/admin/setting           → Get all settings grouped
+  POST /api/admin/setting          → Update settings (batch key-value update)
+  POST /api/admin/setting/upload   → Upload media settings (logos, etc.)
+
+------------------------------------------------------------
+MODULE 7.26 — SOCIAL LOGIN
+------------------------------------------------------------
+DB TABLE: gateway_options (shared with payment/SMS gateways for config storage)
+Keys: google_client_id, google_client_secret
+
+AUTH ENDPOINTS:
+  POST /api/auth/social-login      → Validate Google token, return user + system token
+
+------------------------------------------------------------
+MODULE 7.27 — MENUS & NAVIGATION
+------------------------------------------------------------
+DB TABLE: menus (or managed via settings)
+Admin can configure frontend navigation menu items.
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/menu
+  GET/PUT/DELETE /api/admin/menu/{id}
+
+FRONTEND ENDPOINT:
+  GET /api/frontend/menu           → Active navigation menu items
+
+------------------------------------------------------------
+MODULE 7.28 — NOTIFICATIONS (IN-APP)
+------------------------------------------------------------
+DB TABLE: notifications (Laravel default notifications table)
+FIELDS:
+  id (UUID), type, notifiable_type, notifiable_id,
+  data (JSON), read_at (nullable), created_at, updated_at
+
+FRONTEND ENDPOINTS:
+  GET  /api/frontend/notification          → Unread notifications list
+  POST /api/frontend/notification/read-all → Mark all as read
+
+------------------------------------------------------------
+MODULE 7.29 — OTP
+------------------------------------------------------------
+DB TABLE: otps
+FIELDS:
+  id, email (nullable), phone (nullable), otp (hashed or plain),
+  expires_at (timestamp),
+  created_at, updated_at
+
+AUTH ENDPOINTS:
+  POST /api/auth/send-otp       → Send OTP to email/phone
+  POST /api/auth/verify-otp     → Verify OTP code
+  (used in signup and forgot password flows)
+
+------------------------------------------------------------
+MODULE 7.30 — ADDONS
+------------------------------------------------------------
+DB TABLE: addons
+FIELDS:
+  id, item_id (FK → items), name, price (decimal),
+  is_required (boolean), max_select (integer),
+  status (ENABLE/DISABLE),
+  created_at, updated_at
+
+USAGE: Extra customizations for food items (e.g., extra cheese, add sauce).
+Addons are selected during cart/order placement and stored as JSON snapshot in order_items.
+
+ADMIN ENDPOINTS:
+  GET/POST       /api/admin/addon
+  GET/PUT/DELETE /api/admin/addon/{id}
+
+
+================================================================================
+SECTION 8: DEVOPS & TESTING
+================================================================================
+
+- Laravel standard deployment (Composer dependencies, .env config)
+- One-time installation wizard (/installer route) for initial setup
+- Database migrations run via `php artisan migrate`
+- Default data seeded via `php artisan db:seed`
+- Laravel Queue worker required for async notification processing
+- File storage must be configured (local or S3-compatible)
+- Firebase service account JSON required for push notifications
+
+
+================================================================================
+SECTION 9: THIRD-PARTY INTEGRATIONS
+================================================================================
+
+PAYMENT GATEWAYS (23 total):
+  Stripe, PayPal, Razorpay, PayStack, Mollie, Flutterwave, Instamojo,
+  SSLCommerz, BKash, Nagad, Mercado Pago, PayMob, Paytm, Cashfree,
+  Xendit, Myfatoorah, Benefit, PayFast, CinetPay, PayHere, Authorize.net,
+  Cash on Delivery, E-Wallet
+
+SMS GATEWAYS (8):
+  Twilio, Nexmo, MSG91, Telesign, Bulksms, Bulksmsbd, Clickatell, 2Factor
+
+PUSH NOTIFICATIONS:
+  Firebase Cloud Messaging (FCM) — mobile and web push
+
+MAPS & LOCATION:
+  Google Maps API — delivery distance calculation, address geocoding
+
+SOCIAL AUTH:
+  Google OAuth 2.0
+
+MEDIA:
+  Spatie Media Library — image upload and conversion (thumb 168×180, cover 390×270, preview 600×600)
+
+
+================================================================================
+SECTION 10: EDGE CASES & BUSINESS RULES
+================================================================================
+
+1. DELIVERY CHARGE:
+   - Distance ≤ free_delivery_km → charge = 0
+   - Distance > free_delivery_km → charge = basic_charge + (per_km_charge × extra_km)
+
+2. COUPON APPLICATION:
+   - Validate: active, within date range, usage limit not exceeded, min order met
+   - PERCENTAGE type: capped by maximum_discount_amount if set
+   - Applied before tax calculation on subtotal
+
+3. E-WALLET / CREDIT:
+   - Customer credit_balance field on users table
+   - Credits applied at checkout (reduces amount due)
+   - Credits issued on refund/cashback by admin
+
+4. GUEST CHECKOUT:
+   - guest login enabled via site_guest_login setting
+   - Guest creates temporary account without OTP
+   - Can be converted to full account post-order
+
+5. SCHEDULED ORDERS:
+   - Must select a date and time slot from available slots
+   - Slot availability based on branch time slots
+   - Slot duration configurable (default 30 minutes)
+
+6. SOFT DELETES:
+   - Users, Orders, Items, Branches etc. all soft-deleted (deleted_at timestamp)
+   - Deleted records excluded from normal queries
+
+7. IMAGE CONVERSIONS (auto-generated at upload via Spatie):
+   - thumb: 168×180 px
+   - cover: 390×270 px
+   - preview: 600×600 px
+   - All crop-to-fit, original preserved
+
+8. ORDER SERIAL NUMBER:
+   - Format: DDMMYY + ORDER_ID
+   - Example: March 25 2025, ID 42 → "25032542"
+
+9. BRANCH SCOPE:
+   - BranchScope global query scope auto-applied
+   - Branch Manager can only see data for their branch
+   - Admin can see all branches
+
+
+================================================================================
+SECTION 11: APPENDICES
+================================================================================
+
+APPENDIX A — ENUM REFERENCE
+  ENABLE = 5, DISABLE = 10
+  ORDER STATUS: PENDING=5, CONFIRMED=10, PREPARING=15, PREPARED=20,
+    OUT_FOR_DELIVERY=25, DELIVERED=30, CANCELED=35, REJECTED=40, RETURNED=45
+  ORDER TYPE: DELIVERY=5, TAKEAWAY=10, POS=15, TABLE=20
+  PAYMENT STATUS: UNPAID=5, PAID=10
+  DELIVERY TYPE: SCHEDULED=5, NOW=10
+  CURRENCY POSITION: LEFT=5, RIGHT=10
+  OTP TYPE: BOTH=5, SMS=10, EMAIL=15
+  OTP DIGITS: FOUR=4, SIX=6, EIGHT=8
+
+APPENDIX B — DATABASE TABLES (45+)
+  users, branches, item_categories, items, addons, taxes,
+  orders, order_items, addresses, coupons, offers,
+  dining_tables, kiosk_machines,
+  payment_gateways, gateway_options, transactions,
+  sms_gateways, device_tokens, push_notifications,
+  notification_alerts, notifications,
+  messages, subscribers, sliders, pages, menus,
+  time_slots, currencies, languages,
+  otps, roles, permissions, role_has_permissions, model_has_roles,
+  model_has_permissions, media, settings,
+  analytics, exports, jobs, failed_jobs, personal_access_tokens
+
+APPENDIX C — API ROUTES SUMMARY
+
+AUTH ROUTES (no auth required):
+  POST /api/auth/login
+  POST /api/auth/register
+  POST /api/auth/send-otp
+  POST /api/auth/verify-otp
+  POST /api/auth/forgot-password
+  POST /api/auth/reset-password
+  POST /api/auth/social-login
+  POST /api/auth/guest-register
+  POST /api/auth/kiosk-login
+  POST /api/auth/token-refresh
+
+FRONTEND ROUTES (Bearer Token required):
+  GET/PUT      /api/profile
+  POST         /api/profile/change-password
+  POST         /api/profile/change-image
+  GET/POST     /api/frontend/address
+  GET/PUT/DELETE /api/frontend/address/{id}
+  POST         /api/frontend/address/{id}/set-default
+  GET/POST     /api/frontend/order
+  GET          /api/frontend/order/{id}
+  POST         /api/frontend/order/{id}/cancel
+  GET          /api/frontend/item-category
+  GET          /api/frontend/item
+  GET          /api/frontend/item/{id}
+  GET          /api/frontend/payment-gateway
+  GET          /api/frontend/offer
+  GET          /api/frontend/coupon
+  POST         /api/frontend/coupon/check
+  GET          /api/frontend/message
+  POST         /api/frontend/device-token
+  GET          /api/frontend/delivery-boy-order
+  PUT          /api/frontend/delivery-boy-order/{id}/change-status
+  GET          /api/frontend/notification
+  POST         /api/frontend/notification/read-all
+  GET          /api/frontend/slider
+  GET          /api/frontend/menu
+  GET          /api/frontend/time-slot
+  POST         /api/frontend/subscriber
+
+TABLE ROUTES (no auth — QR code ordering):
+  GET  /api/table/item-category
+  GET  /api/table/dining-table/{slug}
+  POST /api/table/dining-order
+
+ADMIN ROUTES (200+ endpoints — Bearer Token + Permission required):
+  /api/admin/dashboard
+  /api/admin/administrator (CRUD + export + change-password + change-image)
+  /api/admin/customer (same 8-endpoint pattern)
+  /api/admin/delivery-boy (same 8-endpoint pattern)
+  /api/admin/employee, /api/admin/waiter, /api/admin/chef (same pattern)
+  /api/admin/branch (CRUD + change-image)
+  /api/admin/item-category (CRUD + change-image)
+  /api/admin/item (CRUD + change-image + export + import)
+  /api/admin/addon (CRUD)
+  /api/admin/tax (CRUD)
+  /api/admin/online-order (list + show + change-status + assign-delivery-boy)
+  /api/admin/pos-order (list + show)
+  /api/admin/table-order (list + show)
+  /api/admin/coupon (CRUD)
+  /api/admin/offer (CRUD + change-image)
+  /api/admin/dining-table (CRUD)
+  /api/admin/kiosk-machine (CRUD)
+  /api/admin/payment-gateway (list + update + change-image)
+  /api/admin/transaction (list + show + export)
+  /api/admin/sms-gateway (list + update)
+  /api/admin/push-notification (CRUD + send)
+  /api/admin/message (list + reply)
+  /api/admin/subscriber (list + delete + export)
+  /api/admin/slider (CRUD + change-image)
+  /api/admin/page (CRUD)
+  /api/admin/menu (CRUD)
+  /api/admin/time-slot (CRUD)
+  /api/admin/currency (CRUD)
+  /api/admin/language (CRUD)
+  /api/admin/role (list + show permissions)
+  /api/admin/permission (list)
+  /api/admin/role/{id}/permissions (get + update)
+  /api/admin/setting (get + update + upload)
+  /api/admin/sales-report
+  /api/admin/items-report
+  /api/admin/credit-balance-report
+  /api/admin/analytics
+
+APPENDIX D — DEFAULT SEEDED DATA
+  Roles:             8 (Admin, Customer, Delivery Boy, Waiter, Chef, Branch Manager, POS Operator, Staff)
+  Permissions:       65 (hierarchical, all modules)
+  Languages:         4 (English, Arabic, Bengali, German)
+  Payment Gateways:  23 (including Cash on Delivery and E-Wallet)
+  SMS Gateways:      8 (Twilio, Nexmo, MSG91, Telesign, Bulksms, Bulksmsbd, Clickatell, 2Factor)
+  Social Login:      1 (Google)
+  Notification Alerts: 11 (one per order lifecycle event + delivery boy + admin alerts)
+  Settings Groups:   9 (company, site, order_setup, mail, otp, notification, theme, social_media, cookies)
+
+APPENDIX E — DELIVERY CHARGE FORMULA
+  1. Calculate distance (km) using Haversine formula (or Google Maps Distance API)
+  2. If distance ≤ free_delivery_km: charge = 0
+  3. If distance > free_delivery_km: charge = basic_charge + (per_km_charge × (distance − free_km))
+  Example: free=2km, basic=$1, per_km=$1, distance=5km → charge = $1 + ($1×3) = $4
+
+APPENDIX F — ORDER SERIAL NUMBER FORMAT
+  Format: DDMMYY + ORDER_ID
+  DD = day, MM = month, YY = 2-digit year, ORDER_ID = auto-increment ID
+  Example: March 25, 2025, Order ID 42 → "25032542"
+
+APPENDIX G — IMAGE CONVERSION SPECIFICATIONS
+  thumb:   168 × 180 px  → All entities with images
+  cover:   390 × 270 px  → All entities with images
+  preview: 600 × 600 px  → All entities with images
+  All conversions: crop-to-fit, original file preserved alongside generated conversions
+  Implementation: Spatie Media Library registerMediaConversions() on each model with HasMedia trait
+
+
+================================================================================
+END OF DOCUMENT — FoodKing Complete Rebuild Blueprint
+================================================================================
